@@ -1,0 +1,9 @@
+
+Flask==2.1.2
+python-dotenv==0.20.0
+pyodbc~=5.2.0
+pandas>=1.0.0
+openai~=1.82.0
+streamlit~=1.45.1
+requests~=2.32.3
+beautifulsoup4~=4.13.4
