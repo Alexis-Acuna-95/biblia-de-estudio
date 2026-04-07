@@ -7,7 +7,8 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-import pyodbc
+import psycopg2
+import psycopg2.extras
 from dotenv import load_dotenv
 import os
 import base64
@@ -22,34 +23,34 @@ import httpx
 # --- Cargar variables de entorno ---
 load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-server   = os.getenv("DB_SERVER")
-database = os.getenv("DB_DATABASE")
-username = os.getenv("DB_USERNAME")
-password = os.getenv("DB_PASSWORD")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://postgres:sqAnTmuWyzuSfMxPEDRyMOdMAlUBrJhA@junction.proxy.rlwy.net:46758/railway"
+)
 
 # --- Conexión a la base de datos (compartida, no se recrea en cada rerun) ---
 @st.cache_resource
 def get_connection():
-    connection_string = (
-        f"DRIVER={{ODBC Driver 17 for SQL Server}};"
-        f"SERVER={server};DATABASE={database};UID={username};PWD={password}"
-    )
     try:
-        return pyodbc.connect(connection_string, autocommit=False)
-    except pyodbc.Error as ex:
-        st.error(f"❌ Error al conectar a la base de datos: {ex.args[0]}")
+        conn = psycopg2.connect(DATABASE_URL)
+        conn.autocommit = False
+        return conn
+    except psycopg2.Error as ex:
+        st.error(f"❌ Error al conectar a la base de datos: {ex}")
         st.stop()
 
 def ejecutar_query(sql, *params):
     """Ejecuta una query y retorna todas las filas como tuplas planas (serializables)."""
     try:
-        cursor = get_connection().cursor()
-        cursor.execute(sql, *params)
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(sql, params if params else None)
         return [tuple(row) for row in cursor.fetchall()]
-    except pyodbc.Error:
+    except psycopg2.Error:
         st.cache_resource.clear()
-        cursor = get_connection().cursor()
-        cursor.execute(sql, *params)
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(sql, params if params else None)
         return [tuple(row) for row in cursor.fetchall()]
 
 
@@ -58,10 +59,10 @@ def ejecutar_insert(sql, *params):
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute(sql, *params)
+        cursor.execute(sql, params if params else None)
         conn.commit()
-    except pyodbc.Error as ex:
-        st.error(f"❌ Error al guardar en la base de datos: {ex.args[0]}")
+    except psycopg2.Error as ex:
+        st.error(f"❌ Error al guardar en la base de datos: {ex}")
 
 
 # --- Funciones de base de datos con caché ---
@@ -75,7 +76,7 @@ def obtener_libros():
 @st.cache_data(ttl=3600)
 def obtener_capitulos(libro_id):
     rows = ejecutar_query(
-        "SELECT DISTINCT capitulo FROM versiculos WHERE libro_id = ? ORDER BY capitulo",
+        "SELECT DISTINCT capitulo FROM versiculos WHERE libro_id = %s ORDER BY capitulo",
         libro_id
     )
     return [row[0] for row in rows]
@@ -84,7 +85,7 @@ def obtener_capitulos(libro_id):
 @st.cache_data(ttl=3600)
 def obtener_versiculos_capitulo(libro_id, capitulo):
     rows = ejecutar_query(
-        "SELECT id, versiculo, texto FROM versiculos WHERE libro_id = ? AND capitulo = ? ORDER BY versiculo",
+        "SELECT id, versiculo, texto FROM versiculos WHERE libro_id = %s AND capitulo = %s ORDER BY versiculo",
         libro_id, capitulo
     )
     return rows
@@ -93,7 +94,7 @@ def obtener_versiculos_capitulo(libro_id, capitulo):
 @st.cache_data(ttl=3600)
 def obtener_rango_versiculos(libro_id, capitulo):
     rows = ejecutar_query(
-        "SELECT MIN(versiculo), MAX(versiculo) FROM versiculos WHERE libro_id = ? AND capitulo = ?",
+        "SELECT MIN(versiculo), MAX(versiculo) FROM versiculos WHERE libro_id = %s AND capitulo = %s",
         libro_id, capitulo
     )
     return rows[0] if rows else (1, 1)
@@ -108,7 +109,7 @@ def obtener_autores():
 @st.cache_data(ttl=600)
 def obtener_comentario_existente_versiculo(versiculo_id, autor_id):
     rows = ejecutar_query(
-        "SELECT comentario, fecha_creacion FROM comentarios WHERE versiculo_id = ? AND autor_id = ?",
+        "SELECT comentario, fecha_creacion FROM comentarios WHERE versiculo_id = %s AND autor_id = %s",
         versiculo_id, autor_id
     )
     return rows[0] if rows else None
@@ -118,7 +119,7 @@ def obtener_comentario_existente_versiculo(versiculo_id, autor_id):
 def obtener_comentario_existente_rango(libro_id, capitulo, desde, hasta, autor_id):
     rows = ejecutar_query(
         """SELECT comentario, fecha_creacion FROM comentarios
-           WHERE libro_id = ? AND capitulo = ? AND versiculo_desde = ? AND versiculo_hasta = ? AND autor_id = ?""",
+           WHERE libro_id = %s AND capitulo = %s AND versiculo_desde = %s AND versiculo_hasta = %s AND autor_id = %s""",
         libro_id, capitulo, desde, hasta, autor_id
     )
     return rows[0] if rows else None
@@ -128,9 +129,9 @@ def obtener_comentario_existente_rango(libro_id, capitulo, desde, hasta, autor_i
 def obtener_comentario_existente_capitulo(libro_id, capitulo, autor_id):
     rows = ejecutar_query(
         """SELECT comentario, fecha_creacion FROM comentarios
-           WHERE libro_id = ? AND capitulo = ?
+           WHERE libro_id = %s AND capitulo = %s
              AND versiculo_desde IS NULL AND versiculo_hasta IS NULL
-             AND versiculo_id IS NULL AND autor_id = ?""",
+             AND versiculo_id IS NULL AND autor_id = %s""",
         libro_id, capitulo, autor_id
     )
     return rows[0] if rows else None
@@ -173,7 +174,7 @@ def obtener_capitulos_confesion():
 @st.cache_data(ttl=3600)
 def obtener_articulos_confesion(capitulo_id):
     return ejecutar_query(
-        "SELECT id, numero, texto FROM confesion_articulos WHERE capitulo_id = ? ORDER BY numero",
+        "SELECT id, numero, texto FROM confesion_articulos WHERE capitulo_id = %s ORDER BY numero",
         capitulo_id
     )
 
@@ -184,7 +185,7 @@ def obtener_versiculos_prueba_articulo(articulo_id):
            FROM confesion_versiculos_prueba cvp
            JOIN versiculos v ON v.id = cvp.versiculo_id
            JOIN libros l ON l.id = v.libro_id
-           WHERE cvp.articulo_id = ?
+           WHERE cvp.articulo_id = %s
            ORDER BY l.id, v.capitulo, v.versiculo""",
         articulo_id
     )
@@ -195,17 +196,17 @@ def obtener_versiculos_prueba_articulo(articulo_id):
 def obtener_notas(libro_id, capitulo, versiculo=None):
     if versiculo:
         return ejecutar_query(
-            "SELECT id, nota, fecha_creacion, fecha_edicion FROM notas WHERE libro_id=? AND capitulo=? AND versiculo=? ORDER BY fecha_creacion DESC",
+            "SELECT id, nota, fecha_creacion, fecha_edicion FROM notas WHERE libro_id=%s AND capitulo=%s AND versiculo=%s ORDER BY fecha_creacion DESC",
             libro_id, capitulo, versiculo
         )
     return ejecutar_query(
-        "SELECT id, versiculo, versiculo_hasta, nota, fecha_creacion FROM notas WHERE libro_id=? AND capitulo=? ORDER BY versiculo, fecha_creacion DESC",
+        "SELECT id, versiculo, versiculo_hasta, nota, fecha_creacion FROM notas WHERE libro_id=%s AND capitulo=%s ORDER BY versiculo, fecha_creacion DESC",
         libro_id, capitulo
     )
 
 def guardar_nota(libro_id, capitulo, versiculo, versiculo_hasta, nota):
     ejecutar_insert(
-        "INSERT INTO notas (libro_id, capitulo, versiculo, versiculo_hasta, nota) VALUES (?,?,?,?,?)",
+        "INSERT INTO notas (libro_id, capitulo, versiculo, versiculo_hasta, nota) VALUES (%s,%s,%s,%s,%s)",
         libro_id, capitulo, versiculo, versiculo_hasta, nota
     )
 
@@ -213,28 +214,29 @@ def eliminar_nota(nota_id):
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM notas WHERE id=?", nota_id)
+        cursor.execute("DELETE FROM notas WHERE id=%s", (nota_id,))
         conn.commit()
-    except pyodbc.Error as ex:
-        st.error(f"❌ Error al eliminar nota: {ex.args[0]}")
+    except psycopg2.Error as ex:
+        st.error(f"❌ Error al eliminar nota: {ex}")
 
 
 # --- Historial ---
 
 def registrar_historial(libro_id, capitulo, versiculo_desde, versiculo_hasta, modo, autor_id):
     ejecutar_insert(
-        "INSERT INTO historial (libro_id, capitulo, versiculo_desde, versiculo_hasta, modo, autor_id) VALUES (?,?,?,?,?,?)",
+        "INSERT INTO historial (libro_id, capitulo, versiculo_desde, versiculo_hasta, modo, autor_id) VALUES (%s,%s,%s,%s,%s,%s)",
         libro_id, capitulo, versiculo_desde, versiculo_hasta, modo, autor_id
     )
 
 def obtener_historial(limite=20):
     return ejecutar_query(
-        """SELECT TOP (?) l.nombre, h.capitulo, h.versiculo_desde, h.versiculo_hasta,
+        """SELECT l.nombre, h.capitulo, h.versiculo_desde, h.versiculo_hasta,
                   h.modo, a.nombre, h.fecha_consulta
            FROM historial h
            JOIN libros l ON l.id = h.libro_id
            LEFT JOIN autores a ON a.id = h.autor_id
-           ORDER BY h.fecha_consulta DESC""",
+           ORDER BY h.fecha_consulta DESC
+           LIMIT %s""",
         limite
     )
 
@@ -254,7 +256,7 @@ def obtener_versiculo_del_dia():
             FROM versiculos v
             JOIN libros l ON l.id = v.libro_id
             ORDER BY v.id
-            OFFSET {indice} ROWS FETCH NEXT 1 ROWS ONLY"""
+            LIMIT 1 OFFSET {indice}"""
     )
     return rows[0] if rows else None
 
@@ -262,11 +264,11 @@ def obtener_versiculo_del_dia():
 # --- Inserts ---
 
 def insertar_comentario_versiculo(versiculo_id, autor_id, comentario):
-    rows = ejecutar_query("SELECT libro_id, capitulo, versiculo FROM versiculos WHERE id = ?", versiculo_id)
+    rows = ejecutar_query("SELECT libro_id, capitulo, versiculo FROM versiculos WHERE id = %s", versiculo_id)
     libro_id, capitulo, versiculo = rows[0]
     ejecutar_insert(
         """INSERT INTO comentarios (versiculo_id, autor_id, comentario, fecha_creacion, libro_id, capitulo, versiculo)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
         versiculo_id, autor_id, comentario, datetime.now(), libro_id, capitulo, versiculo
     )
     obtener_comentario_existente_versiculo.clear()
@@ -275,7 +277,7 @@ def insertar_comentario_versiculo(versiculo_id, autor_id, comentario):
 def insertar_comentario_rango(libro_id, capitulo, desde, hasta, autor_id, comentario):
     ejecutar_insert(
         """INSERT INTO comentarios (libro_id, capitulo, versiculo_desde, versiculo_hasta, autor_id, comentario, fecha_creacion)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
         libro_id, capitulo, desde, hasta, autor_id, comentario, datetime.now()
     )
     obtener_comentario_existente_rango.clear()
@@ -284,7 +286,7 @@ def insertar_comentario_rango(libro_id, capitulo, desde, hasta, autor_id, coment
 def insertar_comentario_capitulo(libro_id, capitulo, autor_id, comentario):
     ejecutar_insert(
         """INSERT INTO comentarios (libro_id, capitulo, versiculo_desde, versiculo_hasta, versiculo_id, versiculo, autor_id, comentario, fecha_creacion)
-           VALUES (?, ?, NULL, NULL, NULL, NULL, ?, ?, ?)""",
+           VALUES (%s, %s, NULL, NULL, NULL, NULL, %s, %s, %s)""",
         libro_id, capitulo, autor_id, comentario, datetime.now()
     )
     obtener_comentario_existente_capitulo.clear()
