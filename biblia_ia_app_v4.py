@@ -28,6 +28,94 @@ DATABASE_URL = os.getenv(
     "postgresql://postgres:sqAnTmuWyzuSfMxPEDRyMOdMAlUBrJhA@junction.proxy.rlwy.net:46758/railway"
 )
 
+import hashlib
+
+def hash_clave(clave: str) -> str:
+    return hashlib.sha256(clave.strip().upper().encode()).hexdigest()
+
+def verificar_credenciales(email: str, clave: str):
+    """Retorna dict con datos del usuario si las credenciales son válidas, None si no."""
+    rows = ejecutar_query(
+        """SELECT id, nombre, plan, activo, fecha_expiracion
+           FROM usuarios
+           WHERE email = %s AND clave_acceso_hash = %s""",
+        email.strip().lower(), hash_clave(clave)
+    )
+    if not rows:
+        return None
+    id_, nombre, plan, activo, fecha_exp = rows[0]
+    from datetime import datetime
+    if not activo:
+        return None
+    if fecha_exp and fecha_exp < datetime.now():
+        return None
+    return {"id": id_, "email": email.strip().lower(), "nombre": nombre, "plan": plan}
+
+def pantalla_login():
+    """Muestra la pantalla de login y detiene la ejecución si no hay sesión."""
+    if st.session_state.get("usuario"):
+        return  # ya logueado
+
+    st.markdown("""
+        <style>
+        .login-box {
+            max-width: 420px;
+            margin: 80px auto 0 auto;
+            padding: 2.5rem;
+            background: #ffffff;
+            border-radius: 16px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+        }
+        .login-title {
+            text-align: center;
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: #2d6a35;
+            margin-bottom: 0.2rem;
+        }
+        .login-sub {
+            text-align: center;
+            color: #5a7a5c;
+            margin-bottom: 1.5rem;
+            font-size: 0.95rem;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown('<div class="login-box">', unsafe_allow_html=True)
+        st.markdown('<div class="login-title">📖 Biblia de Estudio</div>', unsafe_allow_html=True)
+        st.markdown('<div class="login-sub">Solo por Gracia</div>', unsafe_allow_html=True)
+
+        with st.form("login_form"):
+            email = st.text_input("Correo electrónico", placeholder="tu@email.com")
+            clave = st.text_input("Clave de acceso", type="password", placeholder="Tu clave de acceso")
+            submitted = st.form_submit_button("Ingresar", use_container_width=True)
+
+        if submitted:
+            if not email or not clave:
+                st.error("Completá los dos campos.")
+            else:
+                usuario = verificar_credenciales(email, clave)
+                if usuario:
+                    st.session_state.usuario = usuario
+                    st.rerun()
+                else:
+                    st.error("Correo o clave incorrectos, o la suscripción no está activa.")
+
+        st.markdown("---")
+        st.markdown(
+            '<p style="text-align:center; font-size:0.85rem; color:#5a7a5c;">'
+            '¿Aún no tenés acceso? '
+            '<a href="https://soloporgracia.lemonsqueezy.com" target="_blank">Suscribite aquí</a>'
+            '</p>',
+            unsafe_allow_html=True
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    st.stop()
+
 # --- Conexión a la base de datos (compartida, no se recrea en cada rerun) ---
 @st.cache_resource
 def get_connection():
@@ -193,28 +281,28 @@ def obtener_versiculos_prueba_articulo(articulo_id):
 
 # --- Notas personales ---
 
-def obtener_notas(libro_id, capitulo, versiculo=None):
+def obtener_notas(libro_id, capitulo, usuario_id, versiculo=None):
     if versiculo:
         return ejecutar_query(
-            "SELECT id, nota, fecha_creacion, fecha_edicion FROM notas WHERE libro_id=%s AND capitulo=%s AND versiculo=%s ORDER BY fecha_creacion DESC",
-            libro_id, capitulo, versiculo
+            "SELECT id, nota, fecha_creacion, fecha_edicion FROM notas WHERE libro_id=%s AND capitulo=%s AND versiculo=%s AND usuario_id=%s ORDER BY fecha_creacion DESC",
+            libro_id, capitulo, versiculo, usuario_id
         )
     return ejecutar_query(
-        "SELECT id, versiculo, versiculo_hasta, nota, fecha_creacion FROM notas WHERE libro_id=%s AND capitulo=%s ORDER BY versiculo, fecha_creacion DESC",
-        libro_id, capitulo
+        "SELECT id, versiculo, versiculo_hasta, nota, fecha_creacion FROM notas WHERE libro_id=%s AND capitulo=%s AND usuario_id=%s ORDER BY versiculo, fecha_creacion DESC",
+        libro_id, capitulo, usuario_id
     )
 
-def guardar_nota(libro_id, capitulo, versiculo, versiculo_hasta, nota):
+def guardar_nota(libro_id, capitulo, versiculo, versiculo_hasta, nota, usuario_id):
     ejecutar_insert(
-        "INSERT INTO notas (libro_id, capitulo, versiculo, versiculo_hasta, nota) VALUES (%s,%s,%s,%s,%s)",
-        libro_id, capitulo, versiculo, versiculo_hasta, nota
+        "INSERT INTO notas (libro_id, capitulo, versiculo, versiculo_hasta, nota, usuario_id) VALUES (%s,%s,%s,%s,%s,%s)",
+        libro_id, capitulo, versiculo, versiculo_hasta, nota, usuario_id
     )
 
-def eliminar_nota(nota_id):
+def eliminar_nota(nota_id, usuario_id):
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM notas WHERE id=%s", (nota_id,))
+        cursor.execute("DELETE FROM notas WHERE id=%s AND usuario_id=%s", (nota_id, usuario_id))
         conn.commit()
     except psycopg2.Error as ex:
         st.error(f"❌ Error al eliminar nota: {ex}")
@@ -222,13 +310,25 @@ def eliminar_nota(nota_id):
 
 # --- Historial ---
 
-def registrar_historial(libro_id, capitulo, versiculo_desde, versiculo_hasta, modo, autor_id):
+def registrar_historial(libro_id, capitulo, versiculo_desde, versiculo_hasta, modo, autor_id, usuario_id):
     ejecutar_insert(
-        "INSERT INTO historial (libro_id, capitulo, versiculo_desde, versiculo_hasta, modo, autor_id) VALUES (%s,%s,%s,%s,%s,%s)",
-        libro_id, capitulo, versiculo_desde, versiculo_hasta, modo, autor_id
+        "INSERT INTO historial (libro_id, capitulo, versiculo_desde, versiculo_hasta, modo, autor_id, usuario_id) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+        libro_id, capitulo, versiculo_desde, versiculo_hasta, modo, autor_id, usuario_id
     )
 
-def obtener_historial(limite=20):
+def obtener_historial(limite=20, usuario_id=None):
+    if usuario_id:
+        return ejecutar_query(
+            """SELECT l.nombre, h.capitulo, h.versiculo_desde, h.versiculo_hasta,
+                      h.modo, a.nombre, h.fecha_consulta
+               FROM historial h
+               JOIN libros l ON l.id = h.libro_id
+               LEFT JOIN autores a ON a.id = h.autor_id
+               WHERE h.usuario_id = %s
+               ORDER BY h.fecha_consulta DESC
+               LIMIT %s""",
+            usuario_id, limite
+        )
     return ejecutar_query(
         """SELECT l.nombre, h.capitulo, h.versiculo_desde, h.versiculo_hasta,
                   h.modo, a.nombre, h.fecha_consulta
@@ -438,6 +538,13 @@ def cargar_logo(path: str) -> str:
 # ============================================================
 # UI Principal
 # ============================================================
+
+# --- Login ---
+if "usuario" not in st.session_state:
+    st.session_state.usuario = None
+pantalla_login()
+
+usuario_actual = st.session_state.usuario  # dict: id, email, nombre, plan
 
 # --- Toggle de tema ---
 if "tema" not in st.session_state:
@@ -713,6 +820,21 @@ with st.sidebar:
                 <p class="brand-confesion">"Porque por gracia sois salvados<br>por medio de la fe..." — Ef. 2:8</p>
             </div>
         """, unsafe_allow_html=True)
+
+    # --- Info usuario ---
+    nombre_u = usuario_actual.get("nombre") or usuario_actual["email"]
+    plan_u   = "⭐ Pro" if usuario_actual["plan"] == "pro" else "Basic"
+    st.markdown(
+        f'<div style="padding:8px 12px; background:var(--bg3); border-radius:8px; '
+        f'margin-bottom:10px; font-size:0.85rem; color:var(--subtexto);">'
+        f'<b style="color:var(--texto);">{nombre_u}</b><br>{plan_u}</div>',
+        unsafe_allow_html=True
+    )
+    if st.button("Cerrar sesión", use_container_width=True):
+        st.session_state.usuario = None
+        st.rerun()
+
+    st.divider()
 
     # --- Toggle tema ---
     icono = "☀️  Modo claro" if st.session_state.tema == "oscuro" else "🌙  Modo oscuro"
@@ -1078,7 +1200,7 @@ if hay_contenido:
         comentario2_cache = st.session_state.comparacion_cache.get(clave_comparacion) if clave_comparacion else None
         bosquejo_cache    = st.session_state.sermon_generado.get(pasaje_titulo)
         chat_cache        = st.session_state.chat_historia.get(pasaje_titulo, [])
-        notas_cache       = obtener_notas(libro_id, capitulo)
+        notas_cache       = obtener_notas(libro_id, capitulo, usuario_actual["id"])
 
         col_chk1, col_chk2 = st.columns(2)
         with col_chk1:
@@ -1111,7 +1233,7 @@ if hay_contenido:
                     ref = f"v.{n_ver}" if n_ver else "cap."
                     partes.append(f"\n[{ref} — {n_fecha:%d/%m/%Y}]\n{n_texto}\n")
             if inc_historial:
-                hist = obtener_historial(20)
+                hist = obtener_historial(20, usuario_actual["id"])
                 if hist:
                     partes.append(f"\n📋 HISTORIAL DE ESTUDIO\n{'-'*40}")
                     for h in hist:
@@ -1207,12 +1329,12 @@ with tab_notas:
                 versiculo_map[seleccion][1] if modo == "Versículo único" and seleccion else None
             )
             v_hasta = fin if modo == "Rango de versículos" else v_desde
-            guardar_nota(libro_id, capitulo, v_desde, v_hasta, nueva_nota.strip())
+            guardar_nota(libro_id, capitulo, v_desde, v_hasta, nueva_nota.strip(), usuario_actual["id"])
             st.success("✅ Nota guardada.")
             st.rerun()
 
     # Notas existentes del capítulo
-    notas_existentes = obtener_notas(libro_id, capitulo)
+    notas_existentes = obtener_notas(libro_id, capitulo, usuario_actual["id"])
     if notas_existentes:
         st.markdown(f"**Notas guardadas en {libro_seleccionado} {capitulo}** ({len(notas_existentes)})")
         for nota_row in notas_existentes:
@@ -1222,7 +1344,7 @@ with tab_notas:
             with st.expander(f"📝 {libro_seleccionado} {capitulo}:{ref_nota}  —  {n_fecha:%d/%m/%Y}", expanded=False):
                 st.markdown(n_texto)
                 if st.button("🗑️ Eliminar", key=f"del_nota_{nid}"):
-                    eliminar_nota(nid)
+                    eliminar_nota(nid, usuario_actual["id"])
                     st.rerun()
     else:
         st.info("No hay notas guardadas para este capítulo aún.")
@@ -1237,9 +1359,9 @@ with tab_historial:
             versiculo_map[seleccion][1] if modo == "Versículo único" and seleccion else None
         )
         v_hasta_h = fin if modo == "Rango de versículos" else v_desde_h
-        registrar_historial(libro_id, capitulo, v_desde_h, v_hasta_h, modo, autor_id)
+        registrar_historial(libro_id, capitulo, v_desde_h, v_hasta_h, modo, autor_id, usuario_actual["id"])
 
-    historial = obtener_historial(30)
+    historial = obtener_historial(30, usuario_actual["id"])
     if historial:
         for h in historial:
             h_libro, h_cap, h_vd, h_vh, h_modo, h_autor, h_fecha = h
