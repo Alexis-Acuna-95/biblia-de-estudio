@@ -1117,7 +1117,7 @@ if hay_contenido:
                     for h in hist:
                         h_libro, h_cap, h_vd, h_vh, h_modo, h_autor, h_fecha = h
                         ref_h = f"{h_libro} {h_cap}:{h_vd}" if h_vd else f"{h_libro} {h_cap}"
-                        partes.append(f"\n{ref_h} — {h_modo} — {h_autor or '—'} — {h_fecha:%d/%m/%Y %H:%M}")
+                        partes.append(f"\n{ref_h} — {h_modo} — {h_autor or '—'} — {h_fecha.strftime('%d/%m/%Y %H:%M') if h_fecha else ''}")
             return "\n".join(partes)
 
         contenido_final = armar_contenido()
