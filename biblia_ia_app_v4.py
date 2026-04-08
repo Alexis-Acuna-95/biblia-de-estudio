@@ -141,7 +141,7 @@ def pantalla_login():
         st.markdown(
             '<p style="text-align:center; font-size:0.85rem; color:#5a7a5c;">'
             '¿Aún no tenés acceso? '
-            '<a href="https://soloporgracia.lemonsqueezy.com" target="_blank">Suscribite aquí</a>'
+            '<a href="https://bibliaestudio.lemonsqueezy.com" target="_blank">Suscribite aquí</a>'
             '</p>',
             unsafe_allow_html=True
         )
