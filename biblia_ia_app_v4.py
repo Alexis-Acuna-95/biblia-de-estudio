@@ -51,22 +51,20 @@ def verificar_credenciales(email: str, clave: str):
         return None
     return {"id": id_, "email": email.strip().lower(), "nombre": nombre, "plan": plan}
 
+_LOGIN_CSS = """
+    <style>
+    .login-title { text-align:center; font-size:1.8rem; font-weight:700;
+                   color:#2d6a35; margin-bottom:.2rem; }
+    .login-sub   { text-align:center; color:#5a7a5c; margin-bottom:1rem;
+                   font-size:.95rem; }
+    </style>
+"""
+
 def _pantalla_primer_usuario():
     """Se muestra solo cuando la tabla usuarios está vacía (primer arranque)."""
-    st.markdown("""
-        <style>
-        .login-box { max-width:440px; margin:80px auto 0 auto; padding:2.5rem;
-                     background:#ffffff; border-radius:16px;
-                     box-shadow:0 4px 24px rgba(0,0,0,0.10); }
-        .login-title { text-align:center; font-size:1.6rem; font-weight:700;
-                       color:#2d6a35; margin-bottom:.2rem; }
-        .login-sub { text-align:center; color:#5a7a5c; margin-bottom:1.5rem;
-                     font-size:.95rem; }
-        </style>
-    """, unsafe_allow_html=True)
+    st.markdown(_LOGIN_CSS, unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.markdown('<div class="login-box">', unsafe_allow_html=True)
         st.markdown('<div class="login-title">📖 Biblia de Estudio</div>', unsafe_allow_html=True)
         st.markdown('<div class="login-sub">Configuración inicial — creá tu cuenta de administrador</div>',
                     unsafe_allow_html=True)
@@ -91,7 +89,6 @@ def _pantalla_primer_usuario():
                 if usuario:
                     st.session_state.usuario = usuario
                     st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
 
 
 def hay_usuarios() -> bool:
@@ -117,35 +114,10 @@ def pantalla_login():
         st.stop()
         return
 
-    st.markdown("""
-        <style>
-        .login-box {
-            max-width: 420px;
-            margin: 80px auto 0 auto;
-            padding: 2.5rem;
-            background: #ffffff;
-            border-radius: 16px;
-            box-shadow: 0 4px 24px rgba(0,0,0,0.10);
-        }
-        .login-title {
-            text-align: center;
-            font-size: 1.6rem;
-            font-weight: 700;
-            color: #2d6a35;
-            margin-bottom: 0.2rem;
-        }
-        .login-sub {
-            text-align: center;
-            color: #5a7a5c;
-            margin-bottom: 1.5rem;
-            font-size: 0.95rem;
-        }
-        </style>
-    """, unsafe_allow_html=True)
+    st.markdown(_LOGIN_CSS, unsafe_allow_html=True)
 
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.markdown('<div class="login-box">', unsafe_allow_html=True)
         st.markdown('<div class="login-title">📖 Biblia de Estudio</div>', unsafe_allow_html=True)
         st.markdown('<div class="login-sub">Solo por Gracia</div>', unsafe_allow_html=True)
 
@@ -173,8 +145,6 @@ def pantalla_login():
             '</p>',
             unsafe_allow_html=True
         )
-        st.markdown('</div>', unsafe_allow_html=True)
-
     st.stop()
 
 # --- Conexión a la base de datos (compartida, no se recrea en cada rerun) ---
