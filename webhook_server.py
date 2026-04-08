@@ -37,7 +37,7 @@ VARIANT_TO_PLAN: dict[str, str] = {
     "1497726": "pro",
 }
 
-APP_URL = "TU_APP_URL"
+APP_URL = "https://biblia-de-estudio-m9x9yxxxnjofzrkdwxy57a.streamlit.app"
 
 # ---------------------------------------------------------------------------
 # FastAPI app
