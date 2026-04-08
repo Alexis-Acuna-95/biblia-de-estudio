@@ -1295,7 +1295,7 @@ if hay_contenido:
                 for nota_row in notas_cache:
                     _, n_ver, n_vh, n_texto, n_fecha = nota_row
                     ref = f"v.{n_ver}" if n_ver else "cap."
-                    partes.append(f"\n[{ref} — {n_fecha:%d/%m/%Y}]\n{n_texto}\n")
+                    partes.append(f"\n[{ref} — {n_fecha.strftime('%d/%m/%Y') if n_fecha else ''}]\n{n_texto}\n")
             if inc_historial:
                 hist = obtener_historial(20, usuario_actual["id"])
                 if hist:
@@ -1405,7 +1405,7 @@ with tab_notas:
             nid, n_ver, n_ver_hasta, n_texto, n_fecha = nota_row
             ref_nota = f"v.{n_ver}" if n_ver and (not n_ver_hasta or n_ver == n_ver_hasta) else \
                        f"v.{n_ver}–{n_ver_hasta}" if n_ver and n_ver_hasta else "capítulo"
-            with st.expander(f"📝 {libro_seleccionado} {capitulo}:{ref_nota}  —  {n_fecha:%d/%m/%Y}", expanded=False):
+            with st.expander(f"📝 {libro_seleccionado} {capitulo}:{ref_nota}  —  {n_fecha.strftime('%d/%m/%Y') if n_fecha else ''}", expanded=False):
                 st.markdown(n_texto)
                 if st.button("🗑️ Eliminar", key=f"del_nota_{nid}"):
                     eliminar_nota(nid, usuario_actual["id"])
