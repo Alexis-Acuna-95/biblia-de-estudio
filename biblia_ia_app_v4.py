@@ -1252,7 +1252,7 @@ with tab_historial:
             st.markdown(
                 f'<div style="padding:10px; border-left:3px solid var(--acento); margin-bottom:8px; background:var(--bg2); border-radius:0 8px 8px 0;">'
                 f'<span style="font-weight:600; color:var(--acento);">📖 {ref_h}</span>'
-                f'<span style="float:right; color:var(--subtexto); font-size:0.8rem;">{h_fecha:%d/%m/%Y %H:%M}</span><br>'
+                f'<span style="float:right; color:var(--subtexto); font-size:0.8rem;">{h_fecha.strftime("%d/%m/%Y %H:%M") if h_fecha else ""}</span><br>'
                 f'<span style="font-size:0.85rem; color:var(--subtexto);">{h_modo} • {h_autor or "—"}</span>'
                 f'</div>',
                 unsafe_allow_html=True
