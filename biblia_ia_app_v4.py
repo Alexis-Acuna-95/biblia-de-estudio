@@ -51,10 +51,71 @@ def verificar_credenciales(email: str, clave: str):
         return None
     return {"id": id_, "email": email.strip().lower(), "nombre": nombre, "plan": plan}
 
+def _pantalla_primer_usuario():
+    """Se muestra solo cuando la tabla usuarios está vacía (primer arranque)."""
+    st.markdown("""
+        <style>
+        .login-box { max-width:440px; margin:80px auto 0 auto; padding:2.5rem;
+                     background:#ffffff; border-radius:16px;
+                     box-shadow:0 4px 24px rgba(0,0,0,0.10); }
+        .login-title { text-align:center; font-size:1.6rem; font-weight:700;
+                       color:#2d6a35; margin-bottom:.2rem; }
+        .login-sub { text-align:center; color:#5a7a5c; margin-bottom:1.5rem;
+                     font-size:.95rem; }
+        </style>
+    """, unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown('<div class="login-box">', unsafe_allow_html=True)
+        st.markdown('<div class="login-title">📖 Biblia de Estudio</div>', unsafe_allow_html=True)
+        st.markdown('<div class="login-sub">Configuración inicial — creá tu cuenta de administrador</div>',
+                    unsafe_allow_html=True)
+        with st.form("form_primer_usuario"):
+            nombre_su = st.text_input("Tu nombre")
+            email_su  = st.text_input("Correo electrónico")
+            clave_su  = st.text_input("Elegí una clave de acceso", type="password",
+                                      help="Esta clave la usarás para ingresar. Guardala bien.")
+            clave_su2 = st.text_input("Confirmá la clave", type="password")
+            ok = st.form_submit_button("Crear cuenta y entrar", use_container_width=True)
+        if ok:
+            if not nombre_su or not email_su or not clave_su:
+                st.error("Completá todos los campos.")
+            elif clave_su != clave_su2:
+                st.error("Las claves no coinciden.")
+            elif len(clave_su) < 8:
+                st.error("La clave debe tener al menos 8 caracteres.")
+            else:
+                crear_primer_usuario(email_su, nombre_su, clave_su)
+                st.success("Cuenta creada. Ingresando...")
+                usuario = verificar_credenciales(email_su, clave_su)
+                if usuario:
+                    st.session_state.usuario = usuario
+                    st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+
+def hay_usuarios() -> bool:
+    rows = ejecutar_query("SELECT 1 FROM usuarios LIMIT 1")
+    return bool(rows)
+
+def crear_primer_usuario(email: str, nombre: str, clave: str):
+    ejecutar_insert(
+        """INSERT INTO usuarios (email, nombre, clave_acceso_hash, plan, activo)
+           VALUES (%s, %s, %s, 'pro', TRUE)
+           ON CONFLICT (email) DO NOTHING""",
+        email.strip().lower(), nombre.strip(), hash_clave(clave)
+    )
+
 def pantalla_login():
     """Muestra la pantalla de login y detiene la ejecución si no hay sesión."""
     if st.session_state.get("usuario"):
         return  # ya logueado
+
+    # Primer uso: no hay ningún usuario aún
+    if not hay_usuarios():
+        _pantalla_primer_usuario()
+        st.stop()
+        return
 
     st.markdown("""
         <style>
@@ -126,6 +187,39 @@ def get_connection():
     except psycopg2.Error as ex:
         st.error(f"❌ Error al conectar a la base de datos: {ex}")
         st.stop()
+
+
+@st.cache_resource
+def inicializar_schema():
+    """Crea la tabla usuarios y columnas usuario_id si no existen (idempotente)."""
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS usuarios (
+                id                              SERIAL PRIMARY KEY,
+                email                           VARCHAR(255) UNIQUE NOT NULL,
+                nombre                          VARCHAR(255),
+                clave_acceso_hash               VARCHAR(64)  NOT NULL,
+                plan                            VARCHAR(20)  NOT NULL DEFAULT 'basic',
+                activo                          BOOLEAN      NOT NULL DEFAULT TRUE,
+                fecha_registro                  TIMESTAMP    DEFAULT NOW(),
+                fecha_expiracion                TIMESTAMP,
+                lemon_squeezy_customer_id       VARCHAR(255),
+                lemon_squeezy_subscription_id   VARCHAR(255)
+            )
+        """)
+        for tabla in ("notas", "comentarios", "historial"):
+            cur.execute(f"""
+                ALTER TABLE "{tabla}"
+                ADD COLUMN IF NOT EXISTS usuario_id INTEGER REFERENCES usuarios(id)
+            """)
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass  # Si ya existen, no hay problema
+
+inicializar_schema()
 
 def ejecutar_query(sql, *params):
     """Ejecuta una query y retorna todas las filas como tuplas planas (serializables)."""
