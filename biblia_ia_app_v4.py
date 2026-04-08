@@ -1120,19 +1120,6 @@ st.markdown("---")
 clave_comentario = f"{pasaje_titulo}|{nombre_autor}"
 comentario_generado = st.session_state.comentario_cache.get(clave_comentario)
 
-# Si no está en cache, intentar cargarlo desde la DB automáticamente
-if not comentario_generado and versiculo_ids:
-    _existente_auto = None
-    if modo == "Versículo único" and versiculo_id_unico:
-        _existente_auto = obtener_comentario_existente_versiculo(versiculo_id_unico, autor_id)
-    elif modo == "Rango de versículos" and inicio and fin:
-        _existente_auto = obtener_comentario_existente_rango(libro_id, capitulo, inicio, fin, autor_id)
-    elif modo == "Capítulo completo":
-        _existente_auto = obtener_comentario_existente_capitulo(libro_id, capitulo, autor_id)
-    if _existente_auto:
-        comentario_generado = _existente_auto[0]
-        st.session_state.comentario_cache[clave_comentario] = comentario_generado
-
 if generar:
     if not texto_biblico:
         st.warning("Selecciona un pasaje bíblico en el panel lateral.")
